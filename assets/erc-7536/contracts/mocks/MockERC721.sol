@@ -11,7 +11,7 @@ contract MockERC721 is ERC721Enumerable {
     string private constant OWNER_ERR = 'Invalid owner';
 
     mapping(address=>uint256) private _tokenCounter;
-
+    
     mapping(uint256 => string) private _tokenUri;
 
     constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) {}

@@ -91,11 +91,10 @@ contract Validator is IValidator {
 
         // check limit
         require(valInfo.limit > _count[editionHash], "Validator: Minting Limit Reached");
-
+        
         // collect fees
         Distributor.Edition memory edition = Distributor(msg.sender).getEdition(editionHash);
-        
-        address primaryHolder = IERC721(edition.tokenContract).ownerOf(edition.tokenId);
+        address primaryHolder = Distributor(msg.sender).ownerOf(edition.tokenId);
 
         // address(0) is the native token
         if (valInfo.feeToken == address(0)) {

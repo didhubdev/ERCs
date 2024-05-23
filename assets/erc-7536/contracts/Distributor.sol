@@ -3,10 +3,9 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 
+
 import './interfaces/IEIP7536Distributor.sol';
 import './interfaces/IEIP7536Validator.sol';
-
-import 'hardhat/console.sol';
 
 /**
  * @notice This is an implementation of the IDistributor interface.
@@ -15,10 +14,14 @@ contract Distributor is ERC721Enumerable, IDistributor {
     using Strings for uint256;
 
     struct Edition {
-        address tokenContract;
         uint256 tokenId;
         address validator;
         uint96  actions;
+    }
+
+    struct NFTDescriptor {
+        address tokenContract;
+        uint256 tokenId;
     }
 
     uint96 private constant _TRANSFER = 1<<0;  // child action
@@ -32,48 +35,67 @@ contract Distributor is ERC721Enumerable, IDistributor {
     mapping(uint256 => string) private _tokenURI;
 
     // nft descriptor => edition (For Record Keeping, editions cannot be deleted once set)
-    mapping(address=>mapping(uint256 => bytes32[])) _editionHashes;
+    mapping(uint256 => bytes32[]) _editionHashes;
 
     // edition fields
     mapping(bytes32 => Edition) private _edition;
-    // mapping(bytes32 => address) private _validator;
-    // mapping(bytes32 => uint96) private _actions;
     
     // editions state
     mapping(bytes32 => bool) private _states;
+
+    // External Token uniqueIdentifier to tokenContract/tokenId
+    mapping(uint256 => NFTDescriptor) public externalToken;
 
     constructor (
         string memory name_, 
         string memory symbol_
     ) ERC721(name_, symbol_) {}
     
-    modifier onlyCreator(address tokenContract, uint256 tokenId) {
-        require(
-            _isApprovedOrCreator(_msgSender(), tokenContract, tokenId),
-            'Distributor: caller is not creator nor approved'
-        );
+    modifier onlyParent(uint256 tokenId) {
+        require(ownerOf(tokenId) == _msgSender(), 'Distributor: caller is not parent');
         _;
+    }
+
+    function ownerOf(uint256 tokenId) public view override returns (address) {
+        if (_editionHash[tokenId] != bytes32(0)) {
+            return super.ownerOf(tokenId);
+        } else {
+            return IERC721(externalToken[tokenId].tokenContract).ownerOf(externalToken[tokenId].tokenId);
+        }
+    }
+
+    function registerOrigin(address tokenContract, uint256 tokenId, bytes calldata data) external {
+        if (tokenContract == address(this)) revert ('Distributor: Invalid Token Contract');
+        uint256 uniqueIdentifier = _getUniqueTokenIdentifier(tokenContract, tokenId);
+        externalToken[uniqueIdentifier] = NFTDescriptor(tokenContract, tokenId);
+        emit RegisterOrigin(tokenContract, tokenId, uniqueIdentifier);
+    }
+
+    function _getUniqueTokenIdentifier(
+        address tokenContract,
+        uint256 tokenId
+    ) internal view returns(uint256 uniqueIdentifier) {
+        uniqueIdentifier = uint256(keccak256(abi.encode(tokenContract, tokenId, block.chainid)));
     }
 
     /// @inheritdoc IDistributor
     function setEdition(
-        address tokenContract,
         uint256 tokenId,
         address validator,
-        uint96  actions,
+        uint96  attibutes,
         bytes calldata initData
-    ) external override onlyCreator(tokenContract, tokenId) returns (bytes32) {
+    ) external override onlyParent(tokenId) returns (bytes32) {
 
-        Edition memory edition = Edition(tokenContract, tokenId, validator, actions);
+        Edition memory edition = Edition(tokenId, validator, attibutes);
 
-        bytes32 editionHash = _getEditionHash(tokenContract, tokenId);
+        bytes32 editionHash = _getEditionHash(tokenId);
         
         _storeEdition(edition, editionHash);
         _states[editionHash] = true; // enable minting
 
         IValidator(edition.validator).setRules(editionHash, initData);
         
-        emit SetEdition(editionHash, tokenContract, tokenId, validator, actions);
+        emit SetEdition(editionHash, tokenId, validator, attibutes);
         return editionHash;
     }
     
@@ -81,7 +103,7 @@ contract Distributor is ERC721Enumerable, IDistributor {
         Edition memory edition,
         bytes32 editionHash
     ) internal {
-        _editionHashes[edition.tokenContract][edition.tokenId].push(editionHash);
+        _editionHashes[edition.tokenId].push(editionHash);
         _edition[editionHash] = edition;
     }
 
@@ -89,7 +111,7 @@ contract Distributor is ERC721Enumerable, IDistributor {
     function pauseEdition(
         bytes32 editionHash,
         bool isPaused
-    ) external override onlyCreator(_edition[editionHash].tokenContract, _edition[editionHash].tokenId) {
+    ) external override onlyParent(_edition[editionHash].tokenId) {
         _states[editionHash] = !isPaused; // disable minting
         emit PauseEdition(editionHash, isPaused);
     }
@@ -100,13 +122,13 @@ contract Distributor is ERC721Enumerable, IDistributor {
         IValidator(_edition[editionHash].validator).validate{value: msg.value}(to, editionHash, 0, bytes(''));
         
         uint256 tokenId = _mintToken(to);
-        _tokenURI[tokenId] = _fetchURIFromParent(_edition[editionHash].tokenContract, _edition[editionHash].tokenId);
+        _tokenURI[tokenId] = _fetchURIFromParent(_edition[editionHash].tokenId);
         _editionHash[tokenId] = editionHash;
         
         return tokenId;
     }
     
-    function revoke(uint256 tokenId) external onlyCreator(_edition[_editionHash[tokenId]].tokenContract, _edition[_editionHash[tokenId]].tokenId) {
+    function revoke(uint256 tokenId) external onlyParent(_edition[_editionHash[tokenId]].tokenId) {
         require(isPermitted(tokenId, _REVOKE), 'Distributor: Non-revokable');
         delete _tokenURI[tokenId];
         delete _editionHash[tokenId];
@@ -129,7 +151,7 @@ contract Distributor is ERC721Enumerable, IDistributor {
             _isApprovedOrOwner(_msgSender(), tokenId),
             'ERC721: caller is not token owner nor approved'
         );
-        _tokenURI[tokenId] = _fetchURIFromParent(_edition[_editionHash[tokenId]].tokenContract, _edition[_editionHash[tokenId]].tokenId);
+        _tokenURI[tokenId] = _fetchURIFromParent(_edition[_editionHash[tokenId]].tokenId);
         return _tokenURI[tokenId];
     }
 
@@ -139,8 +161,8 @@ contract Distributor is ERC721Enumerable, IDistributor {
         return tokenId;
     }
 
-    function _fetchURIFromParent(address tokenContract, uint256 tokenId) internal view returns (string memory) {
-        return IERC721Metadata(tokenContract).tokenURI(tokenId);
+    function _fetchURIFromParent(uint256 tokenId) internal view returns (string memory) {
+        return IERC721Metadata(externalToken[tokenId].tokenContract).tokenURI(externalToken[tokenId].tokenId);
     }
 
     function _beforeTokenTransfer(
@@ -154,30 +176,15 @@ contract Distributor is ERC721Enumerable, IDistributor {
         }
         super._beforeTokenTransfer(from, to, tokenId);
     }
-
-    function _isApprovedOrCreator(address spender, address tokenContract, uint256 tokenId)
-        internal
-        view
-        virtual
-        returns (bool)
-    {
-        address owner = IERC721(tokenContract).ownerOf(tokenId);
-        return
-            owner == spender ||
-            IERC721(tokenContract).getApproved(tokenId) == spender ||
-            IERC721(tokenContract).isApprovedForAll(owner, spender);
-    }
-
+    
     function _getEditionHash(
-        address tokenContract,
         uint256 tokenId
     ) internal view returns (bytes32) {
         return
             keccak256(
                 abi.encode(
-                    tokenContract,
                     tokenId,
-                    _editionHashes[tokenContract][tokenId].length
+                    _editionHashes[tokenId].length
                 )
             );
     }
@@ -198,8 +205,8 @@ contract Distributor is ERC721Enumerable, IDistributor {
         return _edition[editionHash];
     }
     
-    function getEditionHashes(address tokenContract, uint256 tokenId) external view returns (bytes32[] memory) {
-        return _editionHashes[tokenContract][tokenId];
+    function getEditionHashes(uint256 tokenId) external view returns (bytes32[] memory) {
+        return _editionHashes[tokenId];
     }
 
 }
