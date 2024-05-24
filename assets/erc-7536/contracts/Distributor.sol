@@ -4,13 +4,14 @@ pragma solidity >=0.8.0 <0.9.0;
 import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 
 
+import './interfaces/IEIP7536Origin.sol';
 import './interfaces/IEIP7536Distributor.sol';
 import './interfaces/IEIP7536Validator.sol';
 
 /**
  * @notice This is an implementation of the IDistributor interface.
  */
-contract Distributor is ERC721Enumerable, IDistributor {
+contract Distributor is ERC721Enumerable, IOrigin, IDistributor {
     using Strings for uint256;
 
     struct Edition {
@@ -156,7 +157,7 @@ contract Distributor is ERC721Enumerable, IDistributor {
     }
 
     function _mintToken(address to) internal returns (uint256) {
-        uint256 tokenId = ++_tokenCounter;
+        uint256 tokenId = _getUniqueTokenIdentifier(address(this), ++_tokenCounter);
         _safeMint(to, tokenId);
         return tokenId;
     }

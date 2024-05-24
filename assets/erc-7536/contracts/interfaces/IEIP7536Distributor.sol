@@ -5,7 +5,6 @@ pragma solidity >=0.8.0 <0.9.0;
 /**
  * @notice The Distributor interface dictates how the holder of any ERC721 compliant tokens, both external
  * and internal to the contract, to create editions that collectors can conditionally mint child tokens from. 
- * External token holders can use the registerOrigin function to register the ERC721 compliant token with the contract. 
  * This function will generate a unique identifier for the external token, which can be used as a proxy to 
  * invoke contract functions under the same interface as internal tokens.
  * 
@@ -20,11 +19,6 @@ pragma solidity >=0.8.0 <0.9.0;
  * different set of attributes that the token holder will be empowered with after the minting of the token.
  */
 interface IDistributor {
-
-    /**
-     * @dev Emitted when an origin is set
-     */
-    event RegisterOrigin(address tokenContract, uint256 tokenId, uint256 uniqueIdentifier);
     
     /**
      * @dev Emitted when an edition is created
@@ -43,11 +37,6 @@ interface IDistributor {
      * @param isPaused The state of the edition
      */
     event PauseEdition(bytes32 editionHash, bool isPaused);
-
-    /**
-     * @dev Generates a unique identifier with the token for edition, the entry point
-     */
-    function registerOrigin (address tokenContract, uint256 tokenId, bytes memory data) external;
 
     /**
      * @dev The parent token holder can set an edition that enables others
