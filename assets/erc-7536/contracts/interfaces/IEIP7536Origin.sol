@@ -20,10 +20,9 @@ interface IOrigin {
      * 
      * @param tokenContract The address of the external token contract
      * @param externalTokenId The token id of the external token
-     * @param data The data to be input into the contract for setting up the rules
      * 
      * @return tokenId Returns the unique identifier generated for the external token
      */
-    function registerOrigin (address tokenContract, uint256 externalTokenId, bytes memory data) external returns (uint256 tokenId);
+    function registerOrigin (address tokenContract, uint256 externalTokenId) external returns (uint256 tokenId);
 
 }

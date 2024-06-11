@@ -65,7 +65,7 @@ contract Distributor is ERC721Enumerable, IOrigin, IDistributor {
         }
     }
 
-    function registerOrigin(address tokenContract, uint256 tokenId, bytes calldata data) external {
+    function registerOrigin(address tokenContract, uint256 tokenId) external {
         if (tokenContract == address(this)) revert ('Distributor: Invalid Token Contract');
         uint256 uniqueIdentifier = _getUniqueTokenIdentifier(tokenContract, tokenId);
         externalToken[uniqueIdentifier] = NFTDescriptor(tokenContract, tokenId);
